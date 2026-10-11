@@ -52,9 +52,10 @@ textarea::placeholder{color:var(--mut)}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 .lock{max-width:520px;margin:12px auto 0;background:var(--card);border-radius:20px;padding:26px 24px 22px}
-.lock h2{font-size:22px;font-weight:700;margin-bottom:4px}
+.lh{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.lock h2{font-size:22px;font-weight:700}
 .lbl{display:block;font-size:12.5px;color:var(--dim);font-weight:500;margin:14px 0 6px}
-.lock input[type=text]{width:100%;background:var(--card2);border:none;border-radius:10px;padding:12px 14px;color:var(--txt);font:inherit;font-size:17px;letter-spacing:.12em;text-transform:uppercase;outline:none}
+.lock input[type=text]{width:100%;background:var(--card2);border:none;border-radius:10px;padding:12px 14px;color:var(--txt);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:17px;letter-spacing:.04em;text-transform:uppercase;outline:none}
 .lock input[type=text]:focus{box-shadow:0 0 0 2px var(--blue)}
 .tog{display:flex;align-items:center;gap:10px;margin-top:20px;font-size:13.5px;color:var(--dim);cursor:pointer;width:max-content;max-width:100%}
 .lock .go{margin-top:18px}
@@ -69,6 +70,7 @@ textarea::placeholder{color:var(--mut)}
 
 .toast{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 22px);left:50%;transform:translateX(-50%) translateY(20px);background:#2c2c2e;color:#fff;padding:10px 18px;border-radius:12px;font-size:14px;opacity:0;transition:all .2s;pointer-events:none;z-index:99;white-space:nowrap}
 .toast.show{opacity:1;transform:translateX(-50%)}
+@media (max-width:374px){.app{padding-left:12px;padding-right:12px}.lock{padding:22px 16px 18px}.lock input[type=text]{padding:12px 10px;font-size:16px;letter-spacing:0}}
 @media (prefers-reduced-motion:reduce){.result{animation:none}*{transition:none!important}}
 </style>
 </head>
@@ -76,7 +78,7 @@ textarea::placeholder{color:var(--mut)}
 <div class="app">
 
   <div class="lock" id="lockCard">
-    <h2>Cipher</h2>
+    <div class="lh"><h2>Cipher</h2><span class="acts"><button class="pill" id="copyWords" hidden>Copy</button><button class="pill" id="newWords">New words</button></span></div>
     <label class="lbl" for="wNum">Number word</label>
     <input type="text" id="wNum" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="next">
     <div class="check" id="numCheck"></div>
@@ -152,7 +154,7 @@ var KEY='cipher_words_v1',W=null,makeBusy=false,readBusy=false,msgSeq=0,codeSeq=
 var IDLE=20*60*1000,AWAY=10*60*1000;
 function $(id){return document.getElementById(id)}
 var toastTimer=null;
-function toast(m){var t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show')},2000)}
+function toast(m,ms){var t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show')},ms||2000)}
 function normWord(w){return String(w||'').toUpperCase().replace(/[^A-Z]/g,'')}
 function numOk(w){return w.length===10&&new Set(w.split('')).size===10}
 function paint(){return new Promise(function(r){var d=false,go=function(){if(!d){d=true;r()}};requestAnimationFrame(function(){setTimeout(go,0)});setTimeout(go,120)})}
@@ -331,6 +333,30 @@ async function doPaste(){
   }catch(e){box.focus();toast('Paste it into the box')}
 }
 
+/* ═══ random words: every letter from the browser's crypto random, no bias ═══ */
+var AZ='ABCDEFGHIJKLMNOPQRSTUVWXYZ',KEYLEN=20;
+function rnd(n){var b=new Uint32Array(1),lim=4294967296-(4294967296%n);do{crypto.getRandomValues(b)}while(b[0]>=lim);return b[0]%n}
+function groups(w){return String(w).replace(/(.{5})(?=.)/g,'$1 ')}
+function newWords(){
+  var a=AZ.split(''),key='';
+  for(var i=a.length-1;i>0;i--){var j=rnd(i+1),t=a[i];a[i]=a[j];a[j]=t}
+  for(var k=0;k<KEYLEN;k++)key+=AZ[rnd(26)];
+  $('wNum').value=groups(a.slice(0,10).join(''));$('wKey').value=groups(key);
+  $('copyWords').hidden=false;checkWords();
+  toast('Save these words somewhere safe',3500);
+}
+function copyWords(){
+  var num=normWord($('wNum').value),key=normWord($('wKey').value);
+  if(!num||!key)return;
+  copyText('Number word: '+groups(num)+'\nKey word: '+groups(key));
+}
+function splitWords(t){
+  var n=/number\s*word\s*:?\s*([a-z ]+?)\s*(?=key\s*word|[\r\n]|$)/i.exec(t),k=/key\s*word\s*:?\s*([a-z ]+?)\s*(?=number\s*word|[\r\n]|$)/i.exec(t);
+  if(!n||!k)return null;
+  var num=normWord(n[1]),key=normWord(k[1]);
+  return numOk(num)&&key?{num:num,key:key}:null;
+}
+
 /* ═══ lock screen ═══ */
 function checkWords(){
   var num=normWord($('wNum').value),key=normWord($('wKey').value),ok=numOk(num),c=$('numCheck');
@@ -343,7 +369,7 @@ function unlock(){
   if(!numOk(num)||!key)return;
   W={num:num,key:key};
   try{if($('remember').checked)localStorage.setItem(KEY,JSON.stringify(W));else localStorage.removeItem(KEY)}catch(e){}
-  $('wNum').value='';$('wKey').value='';
+  $('wNum').value='';$('wKey').value='';$('copyWords').hidden=true;
   $('lockCard').hidden=true;$('main').hidden=false;
   lastActive=Date.now();hiddenAt=0;
   setTab('make');syncButtons();$('msg').focus();
@@ -379,6 +405,12 @@ $('unlock').addEventListener('click',unlock);
 $('wNum').addEventListener('keydown',function(e){if(e.key!=='Enter')return;e.preventDefault();if(!$('unlock').disabled)unlock();else if(numOk(normWord($('wNum').value)))$('wKey').focus()});
 $('wKey').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();if(!$('unlock').disabled)unlock()}});
 $('lockBtn').addEventListener('click',lock);
+$('newWords').addEventListener('click',newWords);
+$('copyWords').addEventListener('click',copyWords);
+[$('wNum'),$('wKey')].forEach(function(el){el.addEventListener('paste',function(e){
+  var w=splitWords((e.clipboardData&&e.clipboardData.getData('text'))||'');
+  if(!w)return;e.preventDefault();$('wNum').value=groups(w.num);$('wKey').value=groups(w.key);checkWords();
+})});
 $('tabMake').addEventListener('click',function(){setTab('make');if(!$('msg').value)$('msg').focus()});
 $('tabRead').addEventListener('click',function(){setTab('read')});
 $('msg').addEventListener('input',function(){$('msgStatus').textContent='';onMsgInput()});
